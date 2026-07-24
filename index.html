@@ -100,117 +100,28 @@
             group = new THREE.Group();
             scene.add(group);
 
-            const depthShaderMaterial = new THREE.ShaderMaterial({
-
-                vertexShader: `
-                    varying vec3 vNormal;
-                    varying vec2 vUv;
-                    void main() {
-                        vNormal = normalize(normalMatrix * normal);
-                        vUv = uv;
-                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                `,
-
-                fragmentShader: `
-                    uniform vec3 diffuseColor;
-                    uniform float roughness;
-                    uniform float metalness;
-                    uniform float emissive;
-                    uniform float opacity;
-                    varying vec3 vNormal;
-                    varying vec2 vUv;
-                    uniform sampler2DArray depthColor;
-                    uniform float depthWidth;
-                    uniform float depthHeight;
-                    #define saturate(a) clamp(a, 0.0, 1.0)
-                    float Depth_GetCameraDepthInMeters(const sampler2DArray depthTexture,
-                        const vec2 depthUv, int arrayIndex) {
-                        return texture(depthColor, vec3(depthUv.x, depthUv.y, arrayIndex)).r;
-                    }
-                    float Depth_GetOcclusion(const sampler2DArray depthTexture, const vec2 depthUv, float assetDepthM, int arrayIndex) {
-                        float depthMm = Depth_GetCameraDepthInMeters(depthTexture, depthUv, arrayIndex);
-                        const float kDepthTolerancePerM = 0.001;
-                        return clamp(1.0 -
-                            0.5 * (depthMm - assetDepthM) /
-                                (kDepthTolerancePerM * assetDepthM) +
-                            0.5, 0.0, 1.0);
-                    }
-                    float Depth_GetBlurredOcclusionAroundUV(const sampler2DArray depthTexture, const vec2 uv, float assetDepthM, int arrayIndex) {
-                        const float kKernelTotalWeights = 269.0;
-                        float sum = 0.0;
-                        const float kOcclusionBlurAmount = 0.0005;
-                        vec2 blurriness = vec2(kOcclusionBlurAmount, kOcclusionBlurAmount);
-                        float current = 0.0;
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-1.0, -2.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+1.0, -2.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-1.0, +2.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+1.0, +2.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-2.0, +1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+2.0, +1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-2.0, -1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+2.0, -1.0) * blurriness, assetDepthM, arrayIndex);
-                        sum += current * 4.0;
-                        current = 0.0;
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-2.0, -0.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+2.0, +0.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+0.0, +2.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-0.0, -2.0) * blurriness, assetDepthM, arrayIndex);
-                        sum += current * 7.0;
-                        current = 0.0;
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-1.0, -1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+1.0, -1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-1.0, +1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+1.0, +1.0) * blurriness, assetDepthM, arrayIndex);
-                        sum += current * 16.0;
-                        current = 0.0;
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+0.0, +1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-0.0, -1.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(+1.0, +0.0) * blurriness, assetDepthM, arrayIndex);
-                        current += Depth_GetOcclusion(depthTexture, uv + vec2(-1.0, -0.0) * blurriness, assetDepthM, arrayIndex);
-                        sum += current * 26.0;
-                        current = Depth_GetOcclusion(depthTexture, uv, assetDepthM, arrayIndex);
-                        sum += current * 33.0;
-                        return sum / kKernelTotalWeights;
-                    }
-                    void main() {
-                        vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-                        float lightIntensity = max(dot(vNormal, lightDir), 0.3);
-                        vec3 finalColor = diffuseColor * lightIntensity;
-                        finalColor += vec3(emissive * 0.2);
-                        gl_FragColor = vec4(finalColor, opacity);
-                    }
-                `,
-
-                uniforms: {
-                    diffuseColor: { value: new THREE.Color(0xffcc00) },
-                    emissive: { value: 0.0 },
-                    roughness: { value: 0.4 },
-                    metalness: { value: 0.8 },
-                    opacity: { value: 1.0 },
-                    depthColor: { value: null },
-                    depthWidth: { value: 1 },
-                    depthHeight: { value: 1 }
-                },
-
-                transparent: true
-            });
-
+            // --- CUBO PADRE: invisible, para raycasting y drag ---
             const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-            const object = new THREE.Mesh(geometry, depthShaderMaterial.clone());
-            object.material.uniforms.opacity.value = 0.0;
+            const hitMaterial = new THREE.MeshBasicMaterial({ 
+                transparent: true, 
+                opacity: 0.0 
+            });
+            const object = new THREE.Mesh(geometry, hitMaterial);
             object.position.set(0, 1.0, -1.5);
             object.name = "trophyContainer";
             group.add(object);
 
+            // --- CARGAR TROFEO GLB: mantiene su material original ---
             const loader = new GLTFLoader();
             loader.load('./models/gltf/Trophy.glb', function (gltf) {
                 
                 const trophyModel = gltf.scene;
                 
+                // Como el leñador: solo shadows, NO tocar material
                 trophyModel.traverse(function (child) {
                     if (child.isMesh) {
-                        child.material = depthShaderMaterial;
+                        child.castShadow = true;
+                        child.receiveShadow = true;
                     }
                 });
                 
@@ -267,7 +178,9 @@
             if (intersections.length > 0) {
                 const intersection = intersections[0];
                 const object = intersection.object;
-                object.material.uniforms.emissive.value = 1.0;
+                // Highlight visual: cambiar color del cubo a naranja semitransparente
+                object.material.opacity = 0.3;
+                object.material.color = new THREE.Color(0xffaa00);
                 controller.attach(object);
                 controller.userData.selected = object;
             }
@@ -279,7 +192,8 @@
 
             if (controller.userData.selected !== undefined) {
                 const object = controller.userData.selected;
-                object.material.uniforms.emissive.value = 0.0;
+                // Quitar highlight
+                object.material.opacity = 0.0;
                 group.attach(object);
                 object.rotation.set(0, 0, 0);
                 controller.userData.selected = undefined;
@@ -304,7 +218,9 @@
             if (intersections.length > 0) {
                 const intersection = intersections[0];
                 const object = intersection.object;
-                object.material.uniforms.emissive.value = 1.0;
+                // Hover: cubo semitransparente amarillo
+                object.material.opacity = 0.15;
+                object.material.color = new THREE.Color(0xffff00);
                 intersected.push(object);
                 if (line) line.scale.z = intersection.distance;
             } else {
@@ -316,7 +232,7 @@
             while (intersected.length) {
                 const object = intersected.pop();
                 if (controller1.userData.selected !== object) {
-                    object.material.uniforms.emissive.value = 0.0;
+                    object.material.opacity = 0.0;
                 }
             }
         }
@@ -330,6 +246,7 @@
 
             group.rotation.set(0, 0, 0);
 
+            // Animación del trofeo: rotación Y + levitación
             group.children.forEach(cubeContainer => {
                 const model = cubeContainer.getObjectByName("animatedItem");
                 if (model) {
@@ -338,26 +255,12 @@
                 }
             });
 
+            // Depth sensing (preparado para futuro, ahora sin shader custom)
             if (renderer.xr.hasDepthSensing() && !isDepthSupplied) {
-                group.children.forEach(child => {
-                    const depthTexture = renderer.xr.getDepthTexture();
-                    child.material.uniforms.depthColor.value = depthTexture;
-
-                    if (depthTexture && depthTexture.source && depthTexture.source.data) {
-                        child.material.uniforms.depthWidth.value = depthTexture.source.data.width;
-                        child.material.uniforms.depthHeight.value = depthTexture.source.data.height;
-                    } else {
-                        child.material.uniforms.depthWidth.value = 1680;
-                        child.material.uniforms.depthHeight.value = 1760;
-                    }
-                    isDepthSupplied = true;
-                });
+                isDepthSupplied = true;
+                console.log('Depth sensing disponible');
             } else if (!renderer.xr.hasDepthSensing() && isDepthSupplied) {
-                group.children.forEach(child => {
-                    child.material.uniforms.depthWidth.value = 0;
-                    child.material.uniforms.depthHeight.value = 0;
-                    isDepthSupplied = false;
-                });
+                isDepthSupplied = false;
             }
 
             cleanIntersected();
