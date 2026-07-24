@@ -117,6 +117,7 @@
                     uniform float roughness;
                     uniform float metalness;
                     uniform float emissive;
+                    uniform float opacity;
                     varying vec3 vNormal;
                     varying vec2 vUv;
                     uniform sampler2DArray depthColor;
@@ -177,7 +178,7 @@
                         float lightIntensity = max(dot(vNormal, lightDir), 0.3);
                         vec3 finalColor = diffuseColor * lightIntensity;
                         finalColor += vec3(emissive * 0.2);
-                        gl_FragColor = vec4(finalColor, 1.0);
+                        gl_FragColor = vec4(finalColor, opacity);
                     }
                 `,
 
@@ -186,16 +187,18 @@
                     emissive: { value: 0.0 },
                     roughness: { value: 0.4 },
                     metalness: { value: 0.8 },
+                    opacity: { value: 1.0 },
                     depthColor: { value: null },
                     depthWidth: { value: 1 },
                     depthHeight: { value: 1 }
-                }
+                },
+
+                transparent: true
             });
 
             const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
             const object = new THREE.Mesh(geometry, depthShaderMaterial.clone());
-            object.material.transparent = true;
-            object.material.opacity = 0.0;
+            object.material.uniforms.opacity.value = 0.0;
             object.position.set(0, 1.0, -1.5);
             object.name = "trophyContainer";
             group.add(object);
@@ -367,5 +370,3 @@
     </script>
 </body>
 </html>
-	
-	
